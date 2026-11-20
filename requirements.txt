@@ -1,0 +1,6 @@
+# Basic Pitch 0.4.0 は Python 3.10/3.11 で動作確認済み
+basic-pitch==0.4.0
+# basic-pitch が引き込む TensorFlow 2.14 は NumPy 2 系で動かない
+numpy<2
+# resampy が pkg_resources を使うため
+setuptools<70
