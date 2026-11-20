@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>タブ譜ビューア</title>
+<style>
+:root {
+  --bg: #f6f5f2; --panel: #ffffff; --ink: #1d1d1f; --muted: #6b6b70; --line: #d9d7d0;
+  --string: #9a978e; --accent: #c2410c; --accent-soft: rgba(194, 65, 12, 0.14);
+  --note: #1d4ed8; --note-dropped: #9ca3af; --cursor: #dc2626; --row-alt: rgba(0,0,0,0.025);
+  --fret-bg: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141416; --panel: #1d1d20; --ink: #ececef; --muted: #9a9aa2; --line: #34343a;
+    --string: #6c6c74; --accent: #fb923c; --accent-soft: rgba(251, 146, 60, 0.16);
+    --note: #60a5fa; --note-dropped: #5b5b63; --cursor: #f87171; --row-alt: rgba(255,255,255,0.03);
+    --fret-bg: #1d1d20;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141416; --panel: #1d1d20; --ink: #ececef; --muted: #9a9aa2; --line: #34343a;
+  --string: #6c6c74; --accent: #fb923c; --accent-soft: rgba(251, 146, 60, 0.16);
+  --note: #60a5fa; --note-dropped: #5b5b63; --cursor: #f87171; --row-alt: rgba(255,255,255,0.03);
+  --fret-bg: #1d1d20;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.5 system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+}
+main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 48px; }
+h1 { font-size: 20px; margin: 0 0 4px; }
+.sub { color: var(--muted); margin: 0 0 16px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+#drop {
+  border: 2px dashed var(--line); border-radius: 10px; padding: 22px; text-align: center; cursor: pointer;
+  color: var(--muted); transition: border-color .15s, background .15s;
+}
+#drop.over { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+#drop strong { color: var(--ink); }
+.row { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+button, select {
+  font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 12px; cursor: pointer;
+}
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:disabled { opacity: .45; cursor: default; }
+label { color: var(--muted); }
+label input[type=range] { vertical-align: middle; width: 110px; }
+.val { display: inline-block; min-width: 3.2em; color: var(--ink); font-variant-numeric: tabular-nums; }
+details summary { cursor: pointer; color: var(--muted); margin-top: 10px; }
+details .row { margin-top: 10px; }
+#status { color: var(--muted); min-height: 1.5em; margin-top: 8px; }
+#status.err { color: var(--cursor); }
+.time { font-variant-numeric: tabular-nums; min-width: 8em; }
+#scroller { overflow-x: auto; overflow-y: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+#view { display: block; }
+#view text { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+.legend { color: var(--muted); font-size: 12px; margin-top: 8px; }
+.legend span { margin-right: 14px; }
+.sw { display: inline-block; width: 12px; height: 8px; border-radius: 2px; vertical-align: middle; margin-right: 4px; }
+#tip {
+  position: fixed; pointer-events: none; background: var(--ink); color: var(--bg); padding: 4px 8px;
+  border-radius: 6px; font-size: 12px; display: none; white-space: nowrap; z-index: 10;
+}
+pre { margin: 0; overflow-x: auto; font: 13px/1.35 ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+.head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.head h2 { font-size: 15px; margin: 0; }
+.empty { color: var(--muted); padding: 30px; text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <h1>タブ譜ビューア</h1>
+  <p class="sub">音源を読み込むと、検出した音とタブ譜を時間に沿って表示します。</p>
+
+  <section class="panel">
+    <div id="drop" tabindex="0">
+      <strong>音声ファイルをここにドロップ</strong>、またはクリックして選択（wav / mp3 / flac など）
+      <input id="file" type="file" accept="audio/*,.wav,.mp3,.flac,.ogg,.m4a,.aiff" hidden>
+    </div>
+    <details>
+      <summary>解析の設定</summary>
+      <div class="row">
+        <label>立ち上がりのしきい値 <input id="onset_threshold" type="range" min="0.1" max="0.9" step="0.05" value="0.5"> <span class="val"></span></label>
+        <label>鳴っている判定 <input id="frame_threshold" type="range" min="0.1" max="0.9" step="0.05" value="0.3"> <span class="val"></span></label>
+        <label>最短の音 (ms) <input id="min_note_ms" type="range" min="30" max="300" step="10" value="100"> <span class="val"></span></label>
+        <label>和音とみなす幅 (ms) <input id="chord_ms" type="range" min="10" max="150" step="5" value="50"> <span class="val"></span></label>
+        <label><input id="keep_harmonics" type="checkbox"> 倍音らしき音も残す</label>
+        <button id="reanalyze" disabled>この設定で解析し直す</button>
+      </div>
+    </details>
+    <div id="status"></div>
+  </section>
+
+  <section class="panel">
+    <div class="row" style="margin-bottom:10px">
+      <button id="play" class="primary" disabled>▶ 再生</button>
+      <span class="time" id="time">0:00.0 / 0:00.0</span>
+      <label>聞く音
+        <select id="mode">
+          <option value="audio">元の音源</option>
+          <option value="synth">検出した音（合成）</option>
+          <option value="both">両方</option>
+        </select>
+      </label>
+      <label>横の拡大 <input id="zoom" type="range" min="40" max="600" step="10" value="160"> <span class="val"></span></label>
+      <label><input id="follow" type="checkbox" checked> 再生位置を追う</label>
+    </div>
+    <div id="scroller"><div class="empty" id="placeholder">まだ何も読み込まれていません</div><svg id="view" width="0" height="0"></svg></div>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--note)"></i>タブ譜に使った音（濃いほど確信が高い）</span>
+      <span><i class="sw" style="background:var(--note-dropped)"></i>倍音として除いた音</span>
+      <span>クリックでその位置から再生、音にマウスを乗せると詳細</span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="head"><h2>テキストのタブ譜</h2><button id="copy" disabled>コピー</button></div>
+    <pre id="ascii">（解析するとここに出ます）</pre>
+  </section>
+</main>
+<div id="tip"></div>
+<audio id="audio" preload="auto"></audio>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const SVGNS = "http://www.w3.org/2000/svg";
+const STRING_NAMES = ["e", "B", "G", "D", "A", "E"];
+const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const noteName = (p) => NOTE_NAMES[p % 12] + (Math.floor(p / 12) - 1);
+
+const state = { file: null, result: null, pps: 160, raf: 0, synthAt: 0, scheduled: new Set(), ctx: null, voices: [] };
+const audio = $("audio");
+
+// ---------- 入力 ----------
+const drop = $("drop");
+drop.addEventListener("click", () => $("file").click());
+drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") $("file").click(); });
+$("file").addEventListener("change", (e) => e.target.files[0] && load(e.target.files[0]));
+["dragenter", "dragover"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", (e) => e.dataTransfer.files[0] && load(e.dataTransfer.files[0]));
+
+const PARAMS = ["onset_threshold", "frame_threshold", "min_note_ms", "chord_ms"];
+for (const id of [...PARAMS, "zoom"]) {
+  const el = $(id), out = el.parentElement.querySelector(".val");
+  const show = () => (out.textContent = el.value);
+  el.addEventListener("input", show); show();
+}
+$("zoom").addEventListener("input", () => { state.pps = +$("zoom").value; if (state.result) render(); });
+$("reanalyze").addEventListener("click", () => state.file && analyze());
+
+function load(file) {
+  stop();
+  state.file = file;
+  if (audio.src) URL.revokeObjectURL(audio.src);
+  audio.src = URL.createObjectURL(file);
+  analyze();
+}
+
+async function analyze() {
+  const q = new URLSearchParams({ name: state.file.name });
+  for (const id of PARAMS) q.set(id, $(id).value);
+  if ($("keep_harmonics").checked) q.set("keep_harmonics", "1");
+  setStatus(`「${state.file.name}」を解析しています…（初回はモデルの読み込みで少し時間がかかります）`);
+  $("reanalyze").disabled = true;
+  try {
+    const res = await fetch("/api/analyze?" + q, { method: "POST", body: state.file });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    state.result = data;
+    const used = data.notes.filter((n) => !n.dropped).length;
+    setStatus(`${data.notes.length} 音を検出（うち ${used} 音をタブ譜に使用、${data.events.length} 箇所）。弦の割り当て: ${data.fingering}`);
+    $("ascii").textContent = data.ascii;
+    $("play").disabled = $("copy").disabled = false;
+    render();
+  } catch (err) {
+    setStatus(String(err.message || err), true);
+  } finally {
+    $("reanalyze").disabled = false;
+  }
+}
+
+function setStatus(text, err = false) { $("status").textContent = text; $("status").classList.toggle("err", err); }
+
+$("copy").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText($("ascii").textContent); $("copy").textContent = "コピーしました"; }
+  catch { $("copy").textContent = "コピーできませんでした"; }
+  setTimeout(() => ($("copy").textContent = "コピー"), 1500);
+});
+
+// ---------- 描画 ----------
+const L = { left: 34, right: 40, axis: 24, strGap: 18, tabPad: 14, rollRow: 7, gap: 22 };
+
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+
+function render() {
+  const r = state.result, pps = state.pps, svg = $("view");
+  $("placeholder").style.display = "none";
+  svg.textContent = "";
+  const duration = Math.max(r.duration, audio.duration || 0, 1);
+  const W = L.left + duration * pps + L.right;
+  const x = (t) => L.left + t * pps;
+
+  const pitches = r.notes.map((n) => n.pitch);
+  const lo = Math.min(...pitches, 40) - 1, hi = Math.max(...pitches, 76) + 1;
+  const tabTop = L.axis + L.tabPad, tabH = L.strGap * 5;
+  const rollTop = tabTop + tabH + L.tabPad + L.gap, rollH = (hi - lo + 1) * L.rollRow;
+  const H = rollTop + rollH + 10;
+  svg.setAttribute("width", W); svg.setAttribute("height", H);
+  state.geom = { x, H, W };
+
+  const css = (v) => `var(${v})`;
+  // 時間軸
+  const step = pps >= 300 ? 0.5 : pps >= 120 ? 1 : pps >= 60 ? 2 : 5;
+  for (let t = 0; t <= duration + 1e-6; t += step) {
+    el("line", { x1: x(t), x2: x(t), y1: L.axis - 6, y2: H, stroke: css("--line"), "stroke-width": Number.isInteger(t) ? 1 : 0.5 }, svg);
+    if (Number.isInteger(t) || step < 1) {
+      const lbl = el("text", { x: x(t) + 3, y: 14, fill: css("--muted"), "font-size": 11 }, svg);
+      lbl.textContent = fmtTime(t, false);
+    }
+  }
+
+  // タブ譜の 6 本線
+  STRING_NAMES.forEach((name, i) => {
+    const y = tabTop + i * L.strGap;
+    el("line", { x1: L.left - 6, x2: W - 10, y1: y, y2: y, stroke: css("--string"), "stroke-width": 1 }, svg);
+    const t = el("text", { x: 10, y: y + 4, fill: css("--muted"), "font-size": 12 }, svg);
+    t.textContent = name;
+  });
+
+  // ピアノロールの背景（黒鍵の段を少し塗る、C に音名）
+  for (let p = lo; p <= hi; p++) {
+    const y = rollTop + (hi - p) * L.rollRow;
+    if ([1, 3, 6, 8, 10].includes(p % 12)) el("rect", { x: L.left, y, width: W - L.left, height: L.rollRow, fill: css("--row-alt") }, svg);
+    if (p % 12 === 0) {
+      el("line", { x1: L.left, x2: W, y1: y + L.rollRow, y2: y + L.rollRow, stroke: css("--line") }, svg);
+      const t = el("text", { x: 4, y: y + L.rollRow, fill: css("--muted"), "font-size": 10 }, svg);
+      t.textContent = noteName(p);
+    }
+  }
+  const rollLabel = el("text", { x: L.left, y: rollTop - 6, fill: css("--muted"), "font-size": 11 }, svg);
+  rollLabel.textContent = "検出した音（縦が音の高さ）";
+
+  // ピアノロールのノート
+  for (const n of r.notes) {
+    const y = rollTop + (hi - n.pitch) * L.rollRow;
+    const rect = el("rect", {
+      x: x(n.start), y: y + 0.5, width: Math.max(2, (n.end - n.start) * pps), height: L.rollRow - 1, rx: 2,
+      fill: css(n.dropped ? "--note-dropped" : "--note"), "fill-opacity": n.dropped ? 0.5 : 0.3 + 0.7 * n.velocity,
+    }, svg);
+    hover(rect, `${noteName(n.pitch)}  ${fmtTime(n.start)}〜${fmtTime(n.end)}  確信 ${(n.velocity * 100).toFixed(0)}%${n.dropped ? "  （倍音として除外）" : ""}`);
+  }
+
+  // タブ譜のフレット番号と、音の長さを示す線
+  for (const ev of r.events) {
+    for (const n of ev.notes) {
+      if (n.string == null) continue;
+      const y = tabTop + (n.string - 1) * L.strGap, cx = x(ev.time);
+      el("line", { x1: cx, x2: x(n.end), y1: y, y2: y, stroke: css("--accent"), "stroke-width": 3, "stroke-opacity": 0.35, "stroke-linecap": "round" }, svg);
+      const label = String(n.fret), w = 8 + label.length * 7;
+      const g = el("g", { class: "fret" }, svg);
+      el("rect", { x: cx - w / 2, y: y - 8, width: w, height: 16, rx: 4, fill: css("--fret-bg"), stroke: css("--accent"), "stroke-width": 1 }, g);
+      const t = el("text", { x: cx, y: y + 4, "text-anchor": "middle", fill: css("--ink"), "font-size": 12, "font-weight": 600 }, g);
+      t.textContent = label;
+      hover(g, `${STRING_NAMES[n.string - 1]} 弦（${n.string} 弦） ${n.fret} フレット  ${noteName(n.pitch)}  ${fmtTime(ev.time)}`);
+    }
+    if (ev.notes.some((n) => n.string == null)) {
+      const miss = ev.notes.filter((n) => n.string == null).map((n) => noteName(n.pitch)).join(", ");
+      const m = el("text", { x: x(ev.time), y: tabTop - 4, "text-anchor": "middle", fill: css("--cursor"), "font-size": 11 }, svg);
+      m.textContent = "!";
+      hover(m, `弦が足りず省いた音: ${miss}`);
+    }
+  }
+
+  // 再生カーソル
+  state.cursor = el("line", { x1: 0, x2: 0, y1: L.axis - 6, y2: H, stroke: css("--cursor"), "stroke-width": 2 }, svg);
+  moveCursor(audio.currentTime || 0);
+}
+
+svgClickToSeek();
+function svgClickToSeek() {
+  $("view").addEventListener("click", (e) => {
+    if (!state.result) return;
+    const rect = $("view").getBoundingClientRect();
+    const t = Math.max(0, (e.clientX - rect.left - L.left) / state.pps);
+    seek(t);
+  });
+}
+
+const tip = $("tip");
+function hover(node, text) {
+  node.style.cursor = "pointer";
+  node.addEventListener("mouseenter", () => { tip.textContent = text; tip.style.display = "block"; });
+  node.addEventListener("mousemove", (e) => { tip.style.left = e.clientX + 12 + "px"; tip.style.top = e.clientY + 14 + "px"; });
+  node.addEventListener("mouseleave", () => (tip.style.display = "none"));
+}
+
+function fmtTime(t, tenths = true) {
+  const m = Math.floor(t / 60), s = t - m * 60;
+  return `${m}:${tenths ? s.toFixed(1).padStart(4, "0") : String(Math.floor(s)).padStart(2, "0")}`;
+}
+
+// ---------- 再生 ----------
+$("play").addEventListener("click", () => (state.playing ? stop() : play()));
+$("mode").addEventListener("change", () => { if (state.playing) { const t = now(); stop(); seek(t); play(); } });
+audio.addEventListener("ended", () => { if ($("mode").value !== "synth") stop(); });
+audio.addEventListener("loadedmetadata", () => { if (state.result) render(); });
+
+function now() {
+  if (state.playing && $("mode").value === "synth") return state.synthOffset + (state.ctx.currentTime - state.synthAt);
+  return audio.currentTime;
+}
+
+function play() {
+  if (!state.result) return;
+  const mode = $("mode").value;
+  state.playing = true;
+  $("play").textContent = "❚❚ 一時停止";
+  if (mode !== "synth") audio.play();
+  if (mode !== "audio") {
+    state.ctx = state.ctx || new AudioContext();
+    state.ctx.resume();
+    state.synthAt = state.ctx.currentTime;
+    state.synthOffset = audio.currentTime;
+    state.scheduled = new Set();
+  }
+  tick();
+}
+
+function stop() {
+  if (!state.playing) return;
+  const t = now();
+  state.playing = false;
+  $("play").textContent = "▶ 再生";
+  audio.pause();
+  audio.currentTime = Math.min(t, audio.duration || t);
+  for (const v of state.voices) try { v.stop(); } catch {}
+  state.voices = [];
+  cancelAnimationFrame(state.raf);
+  moveCursor(audio.currentTime);
+}
+
+function seek(t) {
+  const playing = state.playing;
+  if (playing) stop();
+  audio.currentTime = t;
+  moveCursor(t);
+  if (playing) play();
+}
+
+function tick() {
+  const t = now();
+  const mode = $("mode").value;
+  if (mode !== "audio") scheduleSynth(t);
+  moveCursor(t);
+  const end = Math.max(state.result.duration, audio.duration || 0);
+  if (mode === "synth" && t > end + 0.5) { stop(); audio.currentTime = 0; moveCursor(0); return; }
+  state.raf = requestAnimationFrame(tick);
+}
+
+// 検出した音を簡単な撥弦音で鳴らす（少し先まで予約していく）
+function scheduleSynth(t) {
+  const ctx = state.ctx, ahead = 0.25;
+  state.result.notes.forEach((n, i) => {
+    if (n.dropped || state.scheduled.has(i) || n.start < t - 0.02 || n.start > t + ahead) return;
+    state.scheduled.add(i);
+    const when = state.synthAt + (n.start - state.synthOffset);
+    const dur = Math.min(Math.max(n.end - n.start, 0.15), 3);
+    const osc = ctx.createOscillator(), gain = ctx.createGain(), lp = ctx.createBiquadFilter();
+    osc.type = "sawtooth";
+    osc.frequency.value = 440 * Math.pow(2, (n.pitch - 69) / 12);
+    lp.type = "lowpass"; lp.frequency.setValueAtTime(4000, when); lp.frequency.exponentialRampToValueAtTime(600, when + dur);
+    const peak = 0.06 + 0.12 * n.velocity;
+    gain.gain.setValueAtTime(0.0001, when);
+    gain.gain.exponentialRampToValueAtTime(peak, when + 0.005);
+    gain.gain.exponentialRampToValueAtTime(0.0001, when + dur + 0.3);
+    osc.connect(lp).connect(gain).connect(ctx.destination);
+    osc.start(when); osc.stop(when + dur + 0.35);
+    state.voices.push(osc);
+    osc.onended = () => (state.voices = state.voices.filter((v) => v !== osc));
+  });
+}
+
+function moveCursor(t) {
+  const end = Math.max(state.result?.duration || 0, audio.duration || 0);
+  $("time").textContent = `${fmtTime(t)} / ${fmtTime(end)}`;
+  if (!state.cursor) return;
+  const cx = state.geom.x(t);
+  state.cursor.setAttribute("x1", cx); state.cursor.setAttribute("x2", cx);
+  if (state.playing && $("follow").checked) {
+    const sc = $("scroller");
+    if (cx < sc.scrollLeft + 40 || cx > sc.scrollLeft + sc.clientWidth * 0.75) sc.scrollLeft = cx - sc.clientWidth * 0.25;
+  }
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.code === "Space" && state.result && !["INPUT", "SELECT", "BUTTON"].includes(e.target.tagName)) {
+    e.preventDefault(); state.playing ? stop() : play();
+  }
+});
+</script>
+</body>
+</html>

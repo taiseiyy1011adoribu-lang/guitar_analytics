@@ -25,6 +25,17 @@ python -m guitar_analytics input.wav -o tab.txt  # ファイルに書き出す
 python -m guitar_analytics input.wav --notes     # 検出したノートも表示
 ```
 
+### 画面で見る
+
+```sh
+python -m guitar_analytics.web          # http://127.0.0.1:8000/ がブラウザで開く
+python -m guitar_analytics.web --port 8080 --no-browser
+```
+
+音声ファイルをドロップすると、時間に沿ったタブ譜と検出した音のピアノロールが表示されます。
+再生するとカーソルが動き、クリックした位置から再生できます。「聞く音」で元の音源と検出した音（簡単な合成音）を切り替えられるので、取りこぼしや誤検出を耳で確かめられます。
+しきい値は「解析の設定」から変えて解析し直せます。追加のライブラリは要りません（Python 標準のサーバーで動きます）。
+
 `pip install -e .` すると `guitar-tab input.wav` でも動きます。
 主なオプションは `python -m guitar_analytics -h` を見てください。
 
