@@ -8,7 +8,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .simple_fingering import assign_frets
+from .fingering import assign_frets
 from .rhythm import estimate_beats, group_timed_events, make_grid, quantize
 from .tab import render_rhythm_tab, render_tab
 from .transcribe import drop_harmonics, group_events, transcribe
