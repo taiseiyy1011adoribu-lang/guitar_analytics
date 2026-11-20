@@ -9,7 +9,8 @@ import sys
 from pathlib import Path
 
 from .simple_fingering import assign_frets
-from .tab import render_tab
+from .rhythm import estimate_beats, group_timed_events, make_grid, quantize
+from .tab import render_rhythm_tab, render_tab
 from .transcribe import drop_harmonics, group_events, transcribe
 
 
@@ -25,6 +26,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--chord-ms", type=float, default=50.0, help="この時間内に始まる音を和音とみなす（ミリ秒）")
     parser.add_argument("--keep-harmonics", action="store_true", help="倍音らしき弱い音を消さずに残す")
     parser.add_argument("--notes", action="store_true", help="検出したノート一覧も標準エラーに出す")
+    parser.add_argument("--bpm", type=float, help="テンポを指定する（省略時は音源から推定）")
+    parser.add_argument("--beats-per-bar", type=int, default=4, help="1 小節の拍数（4 なら 4/4 拍子）")
+    parser.add_argument("--no-rhythm", action="store_true", help="リズムを付けず、弾く順番だけを並べる")
     parser.add_argument("--width", type=int, default=80, help="1 段の最大文字数")
     args = parser.parse_args(argv)
 
@@ -42,9 +46,27 @@ def main(argv: list[str] | None = None) -> int:
     if args.notes:
         for n in notes:
             print(f"{n.start:7.3f}-{n.end:7.3f}s  pitch={n.pitch:3d}  conf={n.velocity:.2f}", file=sys.stderr)
-    events = group_events(notes, tolerance=args.chord_ms / 1000.0)
-    positions = assign_frets([pitches for _, pitches in events])
-    text = render_tab(positions, width=args.width)
+    if args.no_rhythm:
+        events = group_events(notes, tolerance=args.chord_ms / 1000.0)
+        positions = assign_frets([pitches for _, pitches in events])
+        text = render_tab(positions, width=args.width)
+    else:
+        timed = group_timed_events(notes, tolerance=args.chord_ms / 1000.0)
+        bpm, beats = estimate_beats(args.audio)
+        if args.bpm:
+            bpm, beats = args.bpm, []
+        grid = make_grid(bpm, beats, timed[0].start if timed else 0.0)
+        qevents = quantize(timed, grid)
+        positions = assign_frets([q.pitches for q in qevents])
+        text = render_rhythm_tab(
+            positions,
+            [q.step for q in qevents],
+            [q.length for q in qevents],
+            steps_per_bar=args.beats_per_bar * 4,
+            width=args.width,
+            header=f"テンポ {bpm:.0f} BPM / {args.beats_per_bar} 拍子"
+            "（音価: w=全 h=2分 q=4分 e=8分 s=16分 .=付点）",
+        )
 
     if args.output:
         args.output.write_text(text, encoding="utf-8")
