@@ -8,6 +8,25 @@
 4. 動的計画法（ビタビ）で、手の移動が少なく弾きやすい弦とフレットを選ぶ（下の「弦・フレット割り当て」）
 5. 小節線と音価の記号付きの ASCII タブ譜として出力する
 
+## Windows アプリとして使う（コマンド操作なし）
+
+1. GitHub の [Releases](../../releases) から最新の `GuitarTab-Setup-<版>.exe` をダウンロードする
+2. ダブルクリックしてインストールする（管理者の権限は要りません。「PC が保護されました」と出たら「詳細情報」→「実行」）
+3. スタートメニューかデスクトップの「ギタータブ譜メーカー」から起動すると、ブラウザで画面が開く。黒い画面を閉じると終了する
+
+新しい版も同じ手順で上から入れ直せます。最初の解析だけ、準備のため 20 秒ほど余計にかかります。
+
+### 新しい版を公開する
+
+GitHub の「Actions」→「Windows アプリを作る」→「Run workflow」で版番号（例 `0.2.0`）を入れて実行すると、
+Windows 上で exe とインストーラーが作られ、サンプル音源で解析できるか確かめてから Releases に公開されます（20 分ほど）。
+`v0.2.0` のようなタグを付けても同じです。プルリクエストでも毎回ビルドだけ行い、できた setup.exe は実行結果の Artifacts から試せます。
+
+- 入口は `guitar_analytics/app.py`（`python -m guitar_analytics.app` でも同じ動きをします）
+- exe の中身は `packaging/guitar_analytics.spec`（PyInstaller）、インストーラーは `packaging/installer.iss`（Inno Setup）
+- exe には TensorFlow を入れず、Basic Pitch 同梱の ONNX 版モデルを onnxruntime で動かしています（`requirements-app.txt`）。
+  `samples/sample.wav` のタブ譜は TensorFlow 版と同じになることを確かめています
+
 ## セットアップ
 
 Python 3.10 か 3.11 が必要です（Basic Pitch の都合）。

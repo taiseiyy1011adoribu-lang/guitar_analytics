@@ -1,0 +1,20 @@
+# Windows アプリ（exe）を作るときの依存関係（GitHub Actions の build-windows-app で使う）。
+# TensorFlow は数百MBあるため入れず、Basic Pitch 同梱の ONNX 版モデルを onnxruntime で動かす。
+# basic-pitch 本体は TensorFlow を引き込まないよう、ワークフローで --no-deps を付けて別に入れる。
+# 同じ exe が毎回作れるよう、版を固定している。上げるときはここを書き換える。
+librosa==0.10.2.post1
+numba==0.68.1
+llvmlite==0.50.0
+mir-eval==0.8.2
+pretty-midi==0.2.11.post0
+resampy==0.4.2
+scikit-learn==1.9.1
+scipy==1.17.1
+soundfile==0.14.0
+audioread==3.1.0
+typing-extensions
+onnxruntime==1.32.0
+numpy==1.26.4
+# resampy が pkg_resources を使うため
+setuptools==69.5.1
+pyinstaller==6.22.3
