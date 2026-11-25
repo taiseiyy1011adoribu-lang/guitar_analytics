@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..tab import render_tab
+from ..theory import analyze_theory
 from ..transcribe import Note, drop_harmonics, group_events, transcribe
 
 try:  # 別の作業で追加される予定の割り当て。無ければ単純版を使う
@@ -95,6 +96,8 @@ def build_result(notes: list[Note], opts: Options | None = None) -> dict:
         ],
         "events": out_events,
         "ascii": render_tab(positions),
+        # キー・スケール・コードの推定と、ソロ・アレンジの提案（音が少ないときは None）
+        "theory": analyze_theory(kept),
     }
 
 
